@@ -7,7 +7,7 @@ longer exists on wger >= 2.6.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -75,6 +75,7 @@ def register(mcp: FastMCP, api: AuthenticatedClient, settings: Settings) -> None
         rest_target: Annotated[int | None, Field(ge=0, le=REST_MAX)] = None,
         session_id: str | None = None,
         next_log_id: str | None = None,
+        load_kind: Literal["added", "assisted"] | None = None,
     ) -> dict[str, Any]:
         """Log a completed set (workoutlog). Without a date, wger stamps the
         entry with the current time; a bare date lands at 12:00.
@@ -126,16 +127,39 @@ def register(mcp: FastMCP, api: AuthenticatedClient, settings: Settings) -> None
         session_id attaches the set to a workout session (see
         list_workout_sessions); wger opens one for the day if none is given.
         next_log_id chains this set to the next log of a dropset series.
+
+        load_kind says what `weight` means. wger's weight field is never
+        negative and carries no meaning of its own, so help from a counterweight
+        machine can only be stored as a positive number — which, unlabelled,
+        reads as load added to the lift. Exercises the server is configured to
+        treat as assisted (WGER_ASSISTED_EXERCISE_IDS) are refused unless you
+        pass load_kind="assisted"; for them `weight` is the assistance, and a
+        larger number means an easier set, not a heavier one. Passing
+        "assisted" for any other exercise is refused too, rather than guessed.
         """
         if slot_entry_id is not None and routine_id is None:
             raise ToolInputError(
                 "slot_entry_id needs routine_id; both come from get_workout_for_date"
             )
+        exercise = as_int(exercise_id, "exercise_id")
+        assisted_ids = set(settings.wger_assisted_exercise_ids)
+        if exercise in assisted_ids and load_kind != "assisted":
+            raise ToolInputError(
+                f"exercise {exercise} is registered as assisted: its weight is the "
+                "assistance the machine gave, not a load added to the lift. Pass "
+                'load_kind="assisted" to log it.'
+            )
+        if load_kind == "assisted" and exercise not in assisted_ids:
+            raise ToolInputError(
+                f"exercise {exercise} is not registered as assisted, so "
+                'load_kind="assisted" is refused rather than guessed. Register its id '
+                "in WGER_ASSISTED_EXERCISE_IDS first."
+            )
         unit = as_weight_unit(
             weight_unit if weight_unit is not None else await profile_weight_unit(api)
         )
         body = api_models.WorkoutLogRequest(
-            exercise=as_int(exercise_id, "exercise_id"),
+            exercise=exercise,
             repetitions=as_decimal(reps),
             repetitions_unit=opt(as_repetition_unit(reps_unit)),
             weight=as_decimal(weight),

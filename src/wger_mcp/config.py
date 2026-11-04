@@ -300,6 +300,13 @@ class Settings(BaseSettings):
     # need only part of the API. An unknown name is rejected at startup.
     mcp_tools: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    # Exercise ids whose logged weight is the assistance a machine gave, not a
+    # load added to the lift (an assisted pull-up on a counterweight machine).
+    # wger's weight field is non-negative and carries no meaning of its own, so
+    # log_set refuses these exercises unless the caller says load_kind="assisted".
+    # Empty (the default) leaves log_set exactly as it was.
+    wger_assisted_exercise_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
+
     # ---------- localisation ----------
     # Default ISO 639-1 language for content lookups. Used as the default for
     # the exercise-search tools' ``language`` argument and to pick which
@@ -314,6 +321,7 @@ class Settings(BaseSettings):
         "allowed_hosts",
         "mcp_tools",
         "mcp_wger_scopes",
+        "wger_assisted_exercise_ids",
         mode="before",
     )
     @classmethod
